@@ -2,51 +2,38 @@ import { CountButton } from "~features/count-button"
 
 import "~style.css"
 
-import { useEffect, useState } from "react"
-
+import { sendToBackground } from "@plasmohq/messaging"
 import { Storage } from "@plasmohq/storage"
+import { useStorage } from "@plasmohq/storage/hook"
 
 function IndexPopup() {
-  // 创建个Storage实例，用于存储
-  const storage = new Storage({})
-  const [count, setCount] = useState(0)
-  const setCountLocalStorage = async (count: number) => {
-    await storage.set("count", count)
-  }
-
-  const getCountLocalStorage = async () => {
-    return await storage.get("count")
-  }
-
-  useEffect(() => {
-    getCountLocalStorage().then((count) => {
-      console.log("getCountLocalStorage:", count)
-      if (count) {
-        setCount(Number(count))
-      } else {
-        setCount(0)
-        setCountLocalStorage(0)
-      }
-    })
-  }, [])
-
-  const handleCountChange = async (newCount: number) => {
-    setCount(newCount)
-    setCountLocalStorage(newCount)
-  }
-
-  const removeCountLocalStorage = async () => {
-    await storage.remove("count")
-    setCount(0)
-    setCountLocalStorage(0)
-  }
+  const [count, setCount] = useStorage<number>("count", 0)
+  const storage = new Storage()
   return (
-    <div className="plasmo-flex plasmo-items-center plasmo-justify-center plasmo-h-16 plasmo-w-40">
-      <CountButton
-        count={count}
-        setCount={handleCountChange}
-        removeCount={removeCountLocalStorage}
-      />
+    <div className="plasmo-flex plasmo-flex-col plasmo-items-center plasmo-justify-center plasmo-h-16 plasmo-w-40">
+      <div>是否同意授权</div>
+      <div className="plasmo-flex plasmo-flex-row plasmo-gap-2">
+        <button
+          className="plasmo-bg-green-500 plasmo-text-white plasmo-rounded-md plasmo-p-2"
+          onClick={() => {
+            storage.set(
+              "lastRequestId",
+              Math.random().toString().substring(2, 15)
+            )
+          }}>
+          同意
+        </button>
+        <button
+          className="plasmo-bg-red-500 plasmo-text-white plasmo-rounded-md plasmo-p-2"
+          onClick={() => {
+            storage.set(
+              "lastRequestId",
+              Math.random().toString().substring(2, 15)
+            )
+          }}>
+          拒绝
+        </button>
+      </div>
     </div>
   )
 }

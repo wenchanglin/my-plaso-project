@@ -7,7 +7,7 @@ export const CountButton = ({
 }: {
   count: number
   setCount: (count: number) => void
-  removeCount: () => void
+  removeCount?: () => void
 }) => {
   return (
     <button
@@ -19,9 +19,6 @@ export const CountButton = ({
       Count:
       <span className="plasmo-inline-flex plasmo-items-center plasmo-justify-center plasmo-w-8 plasmo-h-4 plasmo-ml-2 plasmo-text-xs plasmo-font-semibold plasmo-rounded-full">
         {count}
-      </span>
-      <span className="plasmo-ml-1" onClick={removeCount}>
-        remove
       </span>
     </button>
   )
