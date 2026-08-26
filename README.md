@@ -5,6 +5,7 @@ This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with
 First, run the development server:
 
 ```bash
+pnpm install --registry=https://registry.npmmirror.com
 pnpm dev
 # or
 npm run dev
