@@ -1,10 +1,6 @@
 import cssText from "data-text:~style.css"
 import type { PlasmoCSConfig } from "plasmo"
 
-import { sendToBackground } from "@plasmohq/messaging"
-
-import { CountButton } from "~features/count-button"
-
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"]
 }
@@ -44,23 +40,6 @@ export const getStyle = (): HTMLStyleElement => {
  * 这是一个 Plasmo 扩展的覆盖层组件，用于在网页上显示一个可交互的界面
  */
 const PlasmoOverlay = () => {
-  /**
-   * 发送消息到后台脚本
-   * 异步函数，用于向扩展的后台脚本发送名为 "getData" 的消息
-   * 并在控制台打印后台脚本的响应
-   */
-  const sendMessageToBackground = async () => {
-    // 使用 sendToBackground 函数发送消息
-    // 消息包含名称 "getData" 和包含 id 为 1 的请求体
-    const response = await sendToBackground({
-      name: "getData",
-      body: {
-        id: 1
-      }
-    })
-    // 在控制台打印后台脚本返回的响应
-    console.log("Response from background:", response)
-  }
   // 返回一个使用 Plasmo 样式类的 div 元素
   // 样式包括：z-index 为 50、弹性布局、固定定位、顶部距离 32px、右侧距离 8px
   return (
