@@ -11,8 +11,6 @@
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/**/*.test.mjs"
   },
   "dependencies": {
-    "@plasmohq/messaging": "^0.7.2",
-    "@plasmohq/storage": "^1.15.0",
     "@radix-ui/react-tooltip": "^1.1.15",
     "ethers": "6.17.0",
     "plasmo": "0.90.5",
