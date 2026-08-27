@@ -76,6 +76,13 @@ export interface WalletStore extends WalletData {
   importPrivateKey: (privateKey: string, name?: string) => Promise<WalletAccount>
   unlock: (password: string) => Promise<boolean>
   lock: () => Promise<void>
+  /**
+   * Both exports re-derive the key from the password rather than reusing the
+   * session key, so revealing a secret always costs a password entry and never
+   * touches the lock state.
+   */
+  exportMnemonic: (password: string) => Promise<string>
+  exportPrivateKey: (address: string, password: string) => Promise<string>
   /** Drops the vault itself, not just the session key: back to first run. */
   resetWallet: () => Promise<void>
   refreshLockState: () => Promise<void>
@@ -280,6 +287,34 @@ export const useWalletStore = create<WalletStore>()(
       lock: async () => {
         await clearSessionKey()
         set({ isUnlocked: false })
+      },
+
+      // Deliberately goes through `unlockKey` instead of the session key: the
+      // secret is handed straight back to the caller and never stored in state.
+      exportMnemonic: async (password) => {
+        const { vault } = get()
+        if (!vault) throw new Error("No wallet to export")
+        if (!vault.encryptedMnemonic) {
+          throw new Error("This wallet has no recovery phrase")
+        }
+
+        const key = await unlockKey(password, vault.meta)
+        if (!key) throw new Error("Wrong password")
+
+        return decrypt(vault.encryptedMnemonic, key)
+      },
+
+      exportPrivateKey: async (address, password) => {
+        const { vault, accounts } = get()
+        if (!vault) throw new Error("No wallet to export")
+
+        const account = accounts.find((entry) => entry.address === address)
+        if (!account) throw new Error("Unknown account")
+
+        const key = await unlockKey(password, vault.meta)
+        if (!key) throw new Error("Wrong password")
+
+        return decrypt(account.encryptedPrivateKey, key)
       },
 
       // Every secret lives in either the vault or the session key, so dropping

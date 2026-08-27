@@ -15,6 +15,7 @@ import {
   secondaryButtonClass,
   shortAddress
 } from "./controls.tsx"
+import { ExportSecret } from "./ExportSecret.tsx"
 
 export function AccountPanel() {
   const accounts = useWalletStore(selectPublicAccounts)
@@ -22,6 +23,7 @@ export function AccountPanel() {
   const currentNetwork = useWalletStore(selectCurrentNetwork)
   const networks = useWalletStore((state) => state.networks)
   const connections = useWalletStore((state) => state.connections)
+  const hasPhrase = useWalletStore((state) => state.vault?.encryptedMnemonic != null)
 
   const createAccount = useWalletStore((state) => state.createAccount)
   const importPrivateKey = useWalletStore((state) => state.importPrivateKey)
@@ -34,6 +36,7 @@ export function AccountPanel() {
   const [privateKey, setPrivateKey] = useState("")
   const [showImport, setShowImport] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
+  const [exporting, setExporting] = useState<"mnemonic" | "privateKey" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
 
@@ -47,6 +50,20 @@ export function AccountPanel() {
     } finally {
       setIsBusy(false)
     }
+  }
+
+  if (exporting === "mnemonic") {
+    return <ExportSecret kind="mnemonic" onClose={() => setExporting(null)} />
+  }
+
+  if (exporting === "privateKey" && currentAccount) {
+    return (
+      <ExportSecret
+        kind="privateKey"
+        address={currentAccount.address}
+        onClose={() => setExporting(null)}
+      />
+    )
   }
 
   return (
@@ -135,6 +152,25 @@ export function AccountPanel() {
             导入私钥
           </button>
         )}
+      </div>
+
+      <div className="plasmo-flex plasmo-gap-4">
+        {hasPhrase ? (
+          <button
+            type="button"
+            className={linkButtonClass}
+            onClick={() => setExporting("mnemonic")}>
+            导出助记词
+          </button>
+        ) : null}
+        {currentAccount ? (
+          <button
+            type="button"
+            className={linkButtonClass}
+            onClick={() => setExporting("privateKey")}>
+            导出私钥
+          </button>
+        ) : null}
       </div>
 
       <ErrorText>{error}</ErrorText>

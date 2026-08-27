@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { verifyMessage } from "ethers"
+import { verifyMessage, Wallet } from "ethers"
 
 import { installChromeStub } from "./chrome-stub.mjs"
 
@@ -242,5 +242,67 @@ test("a private-key wallet still signs, and refuses a second vault", async () =>
   await assert.rejects(
     () => useWalletStore.getState().createWallet(PASSWORD),
     /already exists/
+  )
+})
+
+test("exports the phrase and the key that were stored", async () => {
+  reset()
+  const { mnemonic, account } = await useWalletStore.getState().createWallet(PASSWORD)
+
+  assert.equal(await useWalletStore.getState().exportMnemonic(PASSWORD), mnemonic)
+
+  const privateKey = await useWalletStore
+    .getState()
+    .exportPrivateKey(account.address, PASSWORD)
+  assert.equal(new Wallet(privateKey).address, account.address)
+})
+
+test("exporting needs the password, not just an unlocked wallet", async () => {
+  reset()
+  const { account } = await useWalletStore.getState().createWallet(PASSWORD)
+
+  assert.equal(useWalletStore.getState().isUnlocked, true)
+  await assert.rejects(
+    () => useWalletStore.getState().exportMnemonic("wrong password"),
+    /Wrong password/
+  )
+  await assert.rejects(
+    () => useWalletStore.getState().exportPrivateKey(account.address, "wrong password"),
+    /Wrong password/
+  )
+})
+
+// The password is re-derived from the vault meta, so revealing a secret neither
+// needs nor produces a session key.
+test("exporting leaves the lock state alone", async () => {
+  reset()
+  const { mnemonic } = await useWalletStore.getState().createWallet(PASSWORD)
+  await useWalletStore.getState().lock()
+
+  assert.equal(await useWalletStore.getState().exportMnemonic(PASSWORD), mnemonic)
+  assert.equal(useWalletStore.getState().isUnlocked, false)
+  assert.equal(chromeStub.session.size, 0)
+})
+
+test("refuses to export what the wallet does not hold", async () => {
+  reset()
+  const account = await useWalletStore
+    .getState()
+    .createWalletFromPrivateKey(
+      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      PASSWORD
+    )
+
+  await assert.rejects(
+    () => useWalletStore.getState().exportMnemonic(PASSWORD),
+    /no recovery phrase/
+  )
+  await assert.rejects(
+    () => useWalletStore.getState().exportPrivateKey("0xdead", PASSWORD),
+    /Unknown account/
+  )
+  assert.equal(
+    await useWalletStore.getState().exportPrivateKey(account.address, PASSWORD),
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
   )
 })
