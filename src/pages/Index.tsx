@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react"
 
 import { AccountPanel } from "../components/wallet/AccountPanel.tsx"
 import { AuthorizationPanel } from "../components/wallet/AuthorizationPanel.tsx"
+import { BackupPhrase } from "../components/wallet/BackupPhrase.tsx"
 import { ErrorText } from "../components/wallet/controls.tsx"
 import { UnlockWallet } from "../components/wallet/UnlockWallet.tsx"
 import { WalletSetup } from "../components/wallet/WalletSetup.tsx"
@@ -32,6 +33,7 @@ export function PageIndex() {
   const { pending, isLoading, error, decide } = useAuthorizationRequest()
   const hasWallet = useWalletStore((state) => state.vault !== null)
   const isUnlocked = useWalletStore((state) => state.isUnlocked)
+  const pendingBackup = useWalletStore((state) => state.pendingBackup)
 
   const state = getPopupState({ isLoading: isLoading || !hydrated, pending, error })
 
@@ -47,6 +49,10 @@ export function PageIndex() {
     // Unlocking comes first: a locked wallet cannot sign, so approving a
     // request here would hand the dapp a promise the worker has to reject.
     if (!isUnlocked) return <UnlockWallet />
+
+    // A phrase that has not been acknowledged blocks everything else: it is
+    // unreadable again once this popup closes.
+    if (pendingBackup) return <BackupPhrase phrase={pendingBackup} />
 
     if (state.kind === "authorization" && pending) {
       return (

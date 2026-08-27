@@ -6,9 +6,8 @@ import { installChromeStub } from "./chrome-stub.mjs"
 
 // The store creates its persist middleware on import, so the stub must exist first.
 const chromeStub = installChromeStub()
-const { useWalletStore, WALLET_STORAGE_KEY, selectCurrentAccount } = await import(
-  "../src/stores/walletStore.ts"
-)
+const { useWalletStore, WALLET_STORAGE_KEY, selectCurrentAccount, selectPublicAccounts } =
+  await import("../src/stores/walletStore.ts")
 
 const PASSWORD = "correct horse battery staple"
 
@@ -21,7 +20,8 @@ const reset = () => {
     accounts: [],
     currentAddress: null,
     connections: [],
-    isUnlocked: false
+    isUnlocked: false,
+    pendingBackup: null
   })
 }
 
@@ -124,4 +124,48 @@ test("refuses to overwrite an existing wallet", async () => {
     () => useWalletStore.getState().createWallet("another password"),
     /already exists/
   )
+})
+
+// zustand v5 compares snapshots with Object.is, so a selector that rebuilt its
+// result on every call re-rendered the popup until React threw.
+test("account selectors keep the same reference until accounts change", async () => {
+  reset()
+  await useWalletStore.getState().createWallet(PASSWORD)
+
+  const state = useWalletStore.getState()
+  assert.equal(selectPublicAccounts(state), selectPublicAccounts(state))
+  assert.equal(selectCurrentAccount(state), selectCurrentAccount(state))
+
+  await useWalletStore.getState().createAccount()
+  const next = useWalletStore.getState()
+
+  assert.notEqual(selectPublicAccounts(next), selectPublicAccounts(state))
+  assert.equal(selectPublicAccounts(next).length, 2)
+})
+
+test("hands the new phrase over for backup without persisting it", async () => {
+  reset()
+  const { mnemonic } = await useWalletStore.getState().createWallet(PASSWORD)
+  await flushPersist()
+
+  assert.equal(useWalletStore.getState().pendingBackup, mnemonic)
+  assert.equal(
+    JSON.stringify(chromeStub.local.get(WALLET_STORAGE_KEY)).includes("pendingBackup"),
+    false
+  )
+
+  useWalletStore.getState().clearPendingBackup()
+  assert.equal(useWalletStore.getState().pendingBackup, null)
+})
+
+test("importing a phrase asks for no backup, the user already has it", async () => {
+  reset()
+  await useWalletStore
+    .getState()
+    .importMnemonic(
+      "test test test test test test test test test test test junk",
+      PASSWORD
+    )
+
+  assert.equal(useWalletStore.getState().pendingBackup, null)
 })

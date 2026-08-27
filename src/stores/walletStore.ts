@@ -59,6 +59,11 @@ export interface WalletData {
 
 export interface WalletStore extends WalletData {
   isUnlocked: boolean
+  /**
+   * Phrase awaiting the user's acknowledgement, held in memory only: it is
+   * readable exactly once, right after creation, and is never persisted.
+   */
+  pendingBackup: string | null
 
   createWallet: (password: string) => Promise<{ mnemonic: string; account: WalletAccount }>
   importMnemonic: (phrase: string, password: string) => Promise<WalletAccount>
@@ -66,6 +71,7 @@ export interface WalletStore extends WalletData {
   unlock: (password: string) => Promise<boolean>
   lock: () => Promise<void>
   refreshLockState: () => Promise<void>
+  clearPendingBackup: () => void
 
   createAccount: (name?: string) => Promise<WalletAccount>
   switchAccount: (address: string) => void
@@ -117,16 +123,31 @@ const requireSessionKey = async (): Promise<string> => {
   return key
 }
 
-export const selectCurrentAccount = (state: WalletData): WalletAccount | null => {
-  const account = state.accounts.find(({ address }) => address === state.currentAddress)
-  return account ? toPublicAccount(account) : null
+/**
+ * zustand v5 subscribes through `useSyncExternalStore`, which compares snapshots
+ * with `Object.is` and has no equality hook. A selector that maps over state
+ * therefore has to hand back the same array every time it runs, or React keeps
+ * re-rendering until it throws and blanks the popup. Caching per `accounts`
+ * array is enough: every store update replaces that array.
+ */
+const publicAccountsCache = new WeakMap<StoredAccount[], WalletAccount[]>()
+
+export const selectPublicAccounts = (state: WalletData): WalletAccount[] => {
+  const cached = publicAccountsCache.get(state.accounts)
+  if (cached) return cached
+
+  const accounts = state.accounts.map(toPublicAccount)
+  publicAccountsCache.set(state.accounts, accounts)
+  return accounts
 }
+
+export const selectCurrentAccount = (state: WalletData): WalletAccount | null =>
+  selectPublicAccounts(state).find(
+    ({ address }) => address === state.currentAddress
+  ) ?? null
 
 export const selectCurrentNetwork = (state: WalletData): Network =>
   state.networks.find(({ id }) => id === state.currentNetworkId) ?? state.networks[0]
-
-export const selectPublicAccounts = (state: WalletData): WalletAccount[] =>
-  state.accounts.map(toPublicAccount)
 
 export const isOriginConnected = (state: WalletData, origin: string): boolean =>
   state.connections.includes(origin)
@@ -136,6 +157,7 @@ export const useWalletStore = create<WalletStore>()(
     (set, get) => ({
       ...initialData,
       isUnlocked: false,
+      pendingBackup: null,
 
       createWallet: async (password) => {
         if (get().vault) throw new Error("A wallet already exists")
@@ -155,7 +177,8 @@ export const useWalletStore = create<WalletStore>()(
           vault: { meta, encryptedMnemonic: await encrypt(mnemonic, key) },
           accounts: [account],
           currentAddress: account.address,
-          isUnlocked: true
+          isUnlocked: true,
+          pendingBackup: mnemonic
         })
 
         return { mnemonic, account: toPublicAccount(account) }
@@ -228,6 +251,10 @@ export const useWalletStore = create<WalletStore>()(
 
       refreshLockState: async () => {
         set({ isUnlocked: (await readSessionKey()) !== null })
+      },
+
+      clearPendingBackup: () => {
+        set({ pendingBackup: null })
       },
 
       createAccount: async (name) => {
