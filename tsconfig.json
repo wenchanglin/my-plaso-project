@@ -9,6 +9,7 @@
     "./**/*.tsx"
   ],
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "paths": {
       "~*": [
         "./src/*"

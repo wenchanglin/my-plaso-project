@@ -64,10 +64,7 @@ const PlasmoOverlay = () => {
   // 返回一个使用 Plasmo 样式类的 div 元素
   // 样式包括：z-index 为 50、弹性布局、固定定位、顶部距离 32px、右侧距离 8px
   return (
-    <div className="plasmo-z-50 plasmo-flex plasmo-fixed plasmo-top-32 plasmo-right-8">
-      {/* 一个按钮，点击时触发 sendMessageToBackground 函数 */}
-      <button onClick={sendMessageToBackground}>Send Message</button>
-    </div>
+    <div className="plasmo-z-50 plasmo-flex plasmo-fixed plasmo-top-32 plasmo-right-8"></div>
   )
 }
 

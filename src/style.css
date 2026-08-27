@@ -8,3 +8,11 @@
   all: initial;
   box-sizing: border-box;
 }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f7f7f8;
+  color: #171717;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
