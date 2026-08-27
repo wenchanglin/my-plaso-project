@@ -29,9 +29,11 @@ export function AccountPanel() {
   const switchNetwork = useWalletStore((state) => state.switchNetwork)
   const disconnect = useWalletStore((state) => state.disconnect)
   const lock = useWalletStore((state) => state.lock)
+  const resetWallet = useWalletStore((state) => state.resetWallet)
 
   const [privateKey, setPrivateKey] = useState("")
   const [showImport, setShowImport] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
 
@@ -159,6 +161,37 @@ export function AccountPanel() {
               </li>
             ))}
           </ul>
+        )}
+      </div>
+      <div className="plasmo-border-t plasmo-border-neutral-200 plasmo-pt-3">
+        {confirmReset ? (
+          <div className="plasmo-space-y-2">
+            <p className="plasmo-text-xs plasmo-text-red-600">
+              将删除本地的保险箱、账户和授权记录。没有备份助记词的话资产无法恢复。
+            </p>
+            <div className="plasmo-flex plasmo-gap-2">
+              <button
+                type="button"
+                className="plasmo-flex-1 plasmo-rounded plasmo-bg-red-600 plasmo-px-3 plasmo-py-2 plasmo-text-sm plasmo-font-medium plasmo-text-white disabled:plasmo-opacity-40"
+                disabled={isBusy}
+                onClick={() => void run(resetWallet)}>
+                确认重置
+              </button>
+              <button
+                type="button"
+                className={secondaryButtonClass}
+                onClick={() => setConfirmReset(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="plasmo-text-xs plasmo-text-red-600 plasmo-underline"
+            onClick={() => setConfirmReset(true)}>
+            重置钱包
+          </button>
         )}
       </div>
     </section>

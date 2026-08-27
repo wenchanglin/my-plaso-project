@@ -67,9 +67,17 @@ export interface WalletStore extends WalletData {
 
   createWallet: (password: string) => Promise<{ mnemonic: string; account: WalletAccount }>
   importMnemonic: (phrase: string, password: string) => Promise<WalletAccount>
+  /** First-run import: builds the vault around a bare key, no phrase involved. */
+  createWalletFromPrivateKey: (
+    privateKey: string,
+    password: string
+  ) => Promise<WalletAccount>
+  /** Adds a key to an existing, unlocked wallet. */
   importPrivateKey: (privateKey: string, name?: string) => Promise<WalletAccount>
   unlock: (password: string) => Promise<boolean>
   lock: () => Promise<void>
+  /** Drops the vault itself, not just the session key: back to first run. */
+  resetWallet: () => Promise<void>
   refreshLockState: () => Promise<void>
   clearPendingBackup: () => void
 
@@ -207,6 +215,31 @@ export const useWalletStore = create<WalletStore>()(
         return toPublicAccount(account)
       },
 
+      // A wallet built this way has no recovery phrase, so `encryptedMnemonic`
+      // stays null and `createAccount` refuses to derive further accounts.
+      createWalletFromPrivateKey: async (privateKey, password) => {
+        if (get().vault) throw new Error("A wallet already exists")
+
+        const derived = accountFromPrivateKey(privateKey)
+        const { meta, key } = await createVaultMeta(password)
+        const account: StoredAccount = {
+          address: derived.address,
+          name: "Imported Account",
+          index: -1,
+          encryptedPrivateKey: await encrypt(derived.privateKey, key)
+        }
+
+        await writeSessionKey(key)
+        set({
+          vault: { meta, encryptedMnemonic: null },
+          accounts: [account],
+          currentAddress: account.address,
+          isUnlocked: true
+        })
+
+        return toPublicAccount(account)
+      },
+
       // Imported keys have no place on the recovery-phrase tree, so index -1
       // keeps them out of `nextDerivationIndex`.
       importPrivateKey: async (privateKey, name = "Imported Account") => {
@@ -247,6 +280,14 @@ export const useWalletStore = create<WalletStore>()(
       lock: async () => {
         await clearSessionKey()
         set({ isUnlocked: false })
+      },
+
+      // Every secret lives in either the vault or the session key, so dropping
+      // both is enough: the persisted blob is overwritten with the defaults on
+      // the next write, and nothing recoverable is left behind.
+      resetWallet: async () => {
+        await clearSessionKey()
+        set({ ...initialData, isUnlocked: false, pendingBackup: null })
       },
 
       refreshLockState: async () => {

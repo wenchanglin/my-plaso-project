@@ -11,8 +11,10 @@
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/**/*.test.mjs"
   },
   "dependencies": {
+    "@radix-ui/react-tabs": "1.1.13",
     "@radix-ui/react-tooltip": "^1.1.15",
     "ethers": "6.17.0",
+    "lucide-react": "0.469.0",
     "plasmo": "0.90.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",

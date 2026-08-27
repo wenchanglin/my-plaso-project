@@ -169,3 +169,78 @@ test("importing a phrase asks for no backup, the user already has it", async () 
 
   assert.equal(useWalletStore.getState().pendingBackup, null)
 })
+
+// The private-key tab on the setup screen builds a vault with no phrase in it.
+test("a wallet imported from a private key has no recovery phrase", async () => {
+  reset()
+  const account = await useWalletStore
+    .getState()
+    .createWalletFromPrivateKey(
+      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      PASSWORD
+    )
+
+  const state = useWalletStore.getState()
+  assert.equal(account.address, "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+  assert.equal(state.isUnlocked, true)
+  assert.equal(state.vault.encryptedMnemonic, null)
+  assert.equal(state.pendingBackup, null)
+
+  await assert.rejects(
+    () => useWalletStore.getState().createAccount(),
+    /no recovery phrase/
+  )
+})
+
+test("resetting drops the vault, the accounts and the session key", async () => {
+  reset()
+  await useWalletStore.getState().createWallet(PASSWORD)
+  useWalletStore.getState().connect("https://app.example")
+  await flushPersist()
+
+  await useWalletStore.getState().resetWallet()
+  await flushPersist()
+
+  const state = useWalletStore.getState()
+  assert.equal(state.vault, null)
+  assert.deepEqual(state.accounts, [])
+  assert.equal(state.currentAddress, null)
+  assert.deepEqual(state.connections, [])
+  assert.equal(state.isUnlocked, false)
+  assert.equal(state.pendingBackup, null)
+  assert.equal(chromeStub.session.size, 0)
+
+  const persisted = JSON.stringify(chromeStub.local.get(WALLET_STORAGE_KEY))
+  assert.equal(persisted.includes("https://app.example"), false)
+})
+
+// The setup screen is chosen on `vault === null`, so a reset has to land there.
+test("resetting allows creating a fresh wallet", async () => {
+  reset()
+  await useWalletStore.getState().createWallet(PASSWORD)
+  await useWalletStore.getState().resetWallet()
+
+  const { account } = await useWalletStore.getState().createWallet("another one")
+  assert.equal(useWalletStore.getState().accounts.length, 1)
+  assert.equal(useWalletStore.getState().currentAddress, account.address)
+})
+
+test("a private-key wallet still signs, and refuses a second vault", async () => {
+  reset()
+  const account = await useWalletStore
+    .getState()
+    .createWalletFromPrivateKey(
+      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      PASSWORD
+    )
+
+  const signature = await useWalletStore
+    .getState()
+    .signMessageFor(account.address, "hello")
+  assert.equal(verifyMessage("hello", signature), account.address)
+
+  await assert.rejects(
+    () => useWalletStore.getState().createWallet(PASSWORD),
+    /already exists/
+  )
+})
