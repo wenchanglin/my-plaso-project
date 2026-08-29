@@ -63,7 +63,12 @@ export const createInjectedWallet = (
         if (response.success) {
           resolve(response.data)
         } else {
-          reject(new Error(response.error || "Wallet request failed"))
+          const error = response.error
+          reject(
+            typeof error === "string"
+              ? new Error(error)
+              : Object.assign(new Error(error?.message || "Wallet request failed"), error)
+          )
         }
       }
 

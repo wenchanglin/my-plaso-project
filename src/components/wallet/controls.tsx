@@ -45,3 +45,13 @@ export function ErrorText({ children }: { children: React.ReactNode }) {
 
 export const shortAddress = (address: string): string =>
   `${address.slice(0, 6)}...${address.slice(-4)}`
+
+/**
+ * Four decimals is all a 400px popup has room for, while `formatEther` hands
+ * back full wei precision. Anything unparseable renders as zero rather than
+ * `NaN`, which is what a bare `parseFloat(...).toFixed(4)` would show.
+ */
+export const formatBalance = (value: string, decimals = 4): string => {
+  const parsed = Number(value)
+  return (Number.isFinite(parsed) ? parsed : 0).toFixed(decimals)
+}

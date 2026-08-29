@@ -11,6 +11,14 @@ export const config: PlasmoCSConfig = {
 // script is its single runtime messaging gateway. No verbose event logging is
 // used here; unrelated page messages should remain invisible to the console.
 if (typeof window !== "undefined") {
+  const port = chrome.runtime.connect({ name: "ethereum-events" })
+  port.onMessage.addListener((message: unknown) => {
+    if (message && typeof message === "object" &&
+        (message as { from?: string }).from === "my-wallet-background") {
+      window.postMessage(message, "*")
+    }
+  })
+
   window.addEventListener("message", (event) => {
     void handleWalletMessage(
       event,

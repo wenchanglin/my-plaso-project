@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react"
 
-import { AccountPanel } from "../components/wallet/AccountPanel.tsx"
 import { AuthorizationPanel } from "../components/wallet/AuthorizationPanel.tsx"
 import { BackupPhrase } from "../components/wallet/BackupPhrase.tsx"
 import { ErrorText } from "../components/wallet/controls.tsx"
 import { UnlockWallet } from "../components/wallet/UnlockWallet.tsx"
+import { WalletDashboard } from "../components/wallet/WalletDashboard.tsx"
 import { WalletSetup } from "../components/wallet/WalletSetup.tsx"
 import { useAuthorizationRequest } from "../hooks/use-authorization-request.ts"
 import { getPopupState } from "../popup-state.ts"
@@ -67,7 +67,7 @@ export function PageIndex() {
     return (
       <div className="plasmo-space-y-3">
         {state.kind === "error" && <ErrorText>{state.error}</ErrorText>}
-        <AccountPanel />
+        <WalletDashboard />
       </div>
     )
   }

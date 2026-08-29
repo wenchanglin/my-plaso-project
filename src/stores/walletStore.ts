@@ -14,6 +14,7 @@
  *   `isConnected` flag, and it is the background service worker (never a page)
  *   that decides when to call it.
  */
+import { JsonRpcProvider, Wallet } from "ethers"
 import { create } from "zustand"
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware"
 
@@ -98,7 +99,18 @@ export interface WalletStore extends WalletData {
   connect: (origin: string) => void
   disconnect: (origin: string) => void
 
-  signMessageFor: (address: string, message: string) => Promise<string>
+  signMessageFor: (address: string, message: string | Uint8Array) => Promise<string>
+  signTypedDataFor: (
+    address: string,
+    domain: Record<string, unknown>,
+    types: Record<string, Array<{ name: string; type: string }>>,
+    value: Record<string, unknown>
+  ) => Promise<string>
+  sendTransactionFor: (
+    address: string,
+    transaction: Record<string, unknown>,
+    network: Network
+  ) => Promise<string>
 }
 
 const initialData: WalletData = {
@@ -128,6 +140,12 @@ const toPublicAccount = ({ address, name, index }: StoredAccount): WalletAccount
   name,
   index
 })
+
+const findStoredAccount = (
+  accounts: StoredAccount[],
+  address: string
+): StoredAccount | undefined =>
+  accounts.find((account) => account.address.toLowerCase() === address.toLowerCase())
 
 const nextDerivationIndex = (accounts: StoredAccount[]): number =>
   accounts.reduce((highest, account) => Math.max(highest, account.index), -1) + 1
@@ -401,12 +419,43 @@ export const useWalletStore = create<WalletStore>()(
 
       signMessageFor: async (address, message) => {
         const key = await requireSessionKey()
-        const account = get().accounts.find((entry) => entry.address === address)
+        const account = findStoredAccount(get().accounts, address)
         if (!account) throw new Error("Unknown account")
 
         // The plaintext key exists only inside this call.
         const privateKey = await decrypt(account.encryptedPrivateKey, key)
         return signMessage(privateKey, message)
+      },
+
+      signTypedDataFor: async (address, domain, types, value) => {
+        const key = await requireSessionKey()
+        const account = findStoredAccount(get().accounts, address)
+        if (!account) throw new Error("Unknown account")
+
+        const privateKey = await decrypt(account.encryptedPrivateKey, key)
+        return new Wallet(privateKey).signTypedData(domain, types, value)
+      },
+
+      sendTransactionFor: async (address, transaction, network) => {
+        const key = await requireSessionKey()
+        const account = findStoredAccount(get().accounts, address)
+        if (!account) throw new Error("Unknown account")
+
+        const privateKey = await decrypt(account.encryptedPrivateKey, key)
+        const provider = new JsonRpcProvider(network.rpcUrl, network.chainId)
+        const signer = new Wallet(privateKey, provider)
+        const {
+          from: _from,
+          chainId: _chainId,
+          gas: gasLimit,
+          ...rest
+        } = transaction
+        const unsigned = {
+          ...rest,
+          ...(rest.gasLimit === undefined && gasLimit !== undefined ? { gasLimit } : {})
+        } as Parameters<typeof signer.sendTransaction>[0]
+        const response = await signer.sendTransaction(unsigned)
+        return response.hash
       }
     }),
     {
@@ -444,4 +493,3 @@ export const hydrateWalletStore = async (): Promise<WalletStore> => {
   await useWalletStore.persist.rehydrate()
   return useWalletStore.getState()
 }
-

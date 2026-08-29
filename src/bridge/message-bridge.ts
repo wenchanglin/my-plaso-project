@@ -2,7 +2,7 @@ import { isWalletRequest, type WalletRequest, type WalletResponse } from "./prot
 
 export type RuntimeSendMessage = (
   message: WalletRequest,
-  callback: (response?: { success?: boolean; data?: unknown; error?: string }) => void
+  callback: (response?: Pick<WalletResponse, "success" | "data" | "error">) => void
 ) => void
 
 export type BridgeEvent = {

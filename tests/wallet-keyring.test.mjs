@@ -48,3 +48,11 @@ test("produces a signature that recovers to the signing address", async () => {
 
   assert.equal(verifyMessage("hello wallet", signature), account.address)
 })
+
+test("signs raw personal-sign bytes without decoding them as text", async () => {
+  const account = deriveAccount(PHRASE, 0)
+  const bytes = new Uint8Array([0, 255, 16])
+  const signature = await signMessage(account.privateKey, bytes)
+
+  assert.equal(verifyMessage(bytes, signature), account.address)
+})

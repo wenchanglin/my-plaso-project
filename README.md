@@ -60,7 +60,7 @@ Key handling:
   per-vault salt) and keeps it in `chrome.storage.session`, which is memory-only and
   unreachable from content scripts.
 - Only ciphertext reaches disk. The recovery phrase and every private key are encrypted with
-  AES-GCM; plaintext keys exist only inside `signMessageFor()`.
+  AES-GCM; plaintext keys exist only for the duration of a signing or approved transaction call.
 - The wallet starts locked, and `lock()` drops the session key.
 - Approvals are recorded per origin (`connections`), not as one global flag.
 
@@ -68,8 +68,23 @@ Crypto comes from the platform (`crypto.subtle`) and `ethers`; there is no `cryp
 `bip39` dependency and no Buffer polyfill. `DEFAULT_NETWORKS` uses keyless public RPC
 endpoints, so no API key is committed.
 
-Not implemented: token balances and transaction sending. `importPrivateKey` needs an unlocked
-wallet, and `createWallet` / `importMnemonic` refuse to overwrite an existing vault.
+Token registry/watch-asset support is not implemented. The dashboard reads the native balance
+over JSON-RPC (`src/hooks/use-native-balance.ts`), and dapps can use the injected
+`window.ethereum` provider for account access, signatures, typed-data signatures, network
+changes, read-only RPC, and approved `eth_sendTransaction` broadcasts.
+`importPrivateKey` needs an unlocked wallet, and `createWallet` / `importMnemonic` refuse to
+overwrite an existing vault.
+
+## Popup screens
+
+`src/pages/Index.tsx` picks one screen at a time, in this order: the setup tabs when there is
+no vault, the unlock prompt when the vault is locked, the one-time recovery-phrase backup, a
+pending dapp authorization, and otherwise `WalletDashboard`.
+
+`WalletDashboard` is the screen behind an unlocked wallet, split into five tabs: 总览 (account
+card, native balance, block-explorer link), 转账 (native-coin transfer with recipient and amount
+validation), 账户 (switch, derive, import a private key, export secrets, reset the wallet), 网络
+(switch between `DEFAULT_NETWORKS`), and 连接 (approved origins, with a per-origin disconnect).
 
 ## Tests
 

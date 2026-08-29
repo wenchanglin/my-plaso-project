@@ -13,7 +13,8 @@ const REQUEST_LABELS: Record<PendingAuthorization["type"], string> = {
   WALLET_CONNECT: "连接钱包",
   WALLET_GET_ACCOUNT: "读取账户",
   WALLET_SIGN_MESSAGE: "签名消息",
-  WALLET_DISCONNECT: "断开连接"
+  WALLET_DISCONNECT: "断开连接",
+  ETHEREUM_REQUEST: "以太坊请求"
 }
 
 /**

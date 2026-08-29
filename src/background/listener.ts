@@ -42,3 +42,35 @@ export const createRuntimeMessageListener = (handler: WalletRuntimeHandler) =>
       )
     return true
   }
+
+export interface EthereumEventMessage {
+  from: "my-wallet-background"
+  type: "ETHEREUM_EVENT"
+  event: "accountsChanged" | "chainChanged" | "connect" | "disconnect"
+  data?: unknown
+}
+
+export const createEthereumPortBroadcaster = () => {
+  const ports = new Set<chrome.runtime.Port>()
+
+  const addPort = (port: chrome.runtime.Port): void => {
+    if (port.name !== "ethereum-events") return
+    ports.add(port)
+    port.onDisconnect.addListener(() => ports.delete(port))
+  }
+
+  const broadcast = (
+    origin: string,
+    event: EthereumEventMessage["event"],
+    data?: unknown
+  ): void => {
+    // Chrome ports expose the sender origin, so only the matching page gets
+    // the public state transition.
+    for (const port of ports) {
+      const senderOrigin = readSenderOrigin(port.sender)
+      if (senderOrigin === origin) port.postMessage({ from: "my-wallet-background", type: "ETHEREUM_EVENT", event, data })
+    }
+  }
+
+  return { addPort, broadcast }
+}

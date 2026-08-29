@@ -48,5 +48,5 @@ export const accountFromPrivateKey = (privateKey: string): DerivedKey => {
   }
 }
 
-export const signMessage = (privateKey: string, message: string): Promise<string> =>
+export const signMessage = (privateKey: string, message: string | Uint8Array): Promise<string> =>
   new Wallet(privateKey).signMessage(message)

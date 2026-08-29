@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { verifyMessage, Wallet } from "ethers"
+import { verifyMessage, verifyTypedData, Wallet } from "ethers"
 
 import { installChromeStub } from "./chrome-stub.mjs"
 
@@ -89,6 +89,20 @@ test("signs with the stored account after unlocking", async () => {
   const signature = await useWalletStore.getState().signMessageFor(account.address, "hello")
 
   assert.equal(verifyMessage("hello", signature), account.address)
+})
+
+test("signs typed data with the stored account after unlocking", async () => {
+  reset()
+  const { account } = await useWalletStore.getState().createWallet(PASSWORD)
+  const domain = { name: "My Wallet", version: "1", chainId: 11155111 }
+  const types = { Mail: [{ name: "contents", type: "string" }] }
+  const value = { contents: "hello" }
+
+  const signature = await useWalletStore
+    .getState()
+    .signTypedDataFor(account.address, domain, types, value)
+
+  assert.equal(verifyTypedData(domain, types, value, signature), account.address)
 })
 
 test("derives additional accounts from the stored phrase", async () => {

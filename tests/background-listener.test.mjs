@@ -1,7 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { createRuntimeMessageListener, readSenderOrigin } from "../src/background/listener.ts"
+import {
+  createEthereumPortBroadcaster,
+  createRuntimeMessageListener,
+  readSenderOrigin
+} from "../src/background/listener.ts"
 
 test("leaves non-wallet messages for Plasmo messaging handlers", () => {
   let responded = false
@@ -72,4 +76,29 @@ test("passes the sender origin to the wallet handler", async () => {
 
   await new Promise((resolve) => setImmediate(resolve))
   assert.deepEqual(received, { origin: "https://app.example" })
+})
+
+test("broadcasts public events only to ports from the matching origin", () => {
+  const listeners = new Set()
+  const makePort = (origin) => ({
+    name: "ethereum-events",
+    sender: { origin },
+    messages: [],
+    onDisconnect: {
+      addListener: (listener) => listeners.add(listener)
+    },
+    postMessage(message) {
+      this.messages.push(message)
+    }
+  })
+  const matching = makePort("https://app.example")
+  const other = makePort("https://other.example")
+  const broadcaster = createEthereumPortBroadcaster()
+
+  broadcaster.addPort(matching)
+  broadcaster.addPort(other)
+  broadcaster.broadcast("https://app.example", "accountsChanged", ["0xabc"])
+
+  assert.equal(matching.messages.length, 1)
+  assert.equal(other.messages.length, 0)
 })
