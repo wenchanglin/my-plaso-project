@@ -2,8 +2,10 @@ import type { PlasmoCSConfig } from "plasmo"
 
 import { handleWalletMessage } from "../bridge/message-bridge.ts"
 
+// Keep `matches` identical to injected-helper.ts — see the note there for why
+// the list must be a literal and why every host also needs a host permission.
 export const config: PlasmoCSConfig = {
-  matches: ["https://*/*"],
+  matches: ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
   run_at: "document_start"
 }
 
