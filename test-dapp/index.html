@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EIP-6963 钱包选择测试页</title>
+    <!--
+      A dApp, not a part of the extension: nothing here is bundled or shipped.
+      It exists because the wallet-picker step belongs to the page rather than
+      the wallet — `window.ethereum.request()` can only ever reach the single
+      provider that owns the global, so the only way to see every installed
+      wallet is to collect the EIP-6963 announcements yourself.
+
+      Serve it over http://localhost, which is in the content scripts' match
+      patterns (any port works: Chrome match patterns ignore the port):
+
+        python3 -m http.server 8080 --directory test-dapp
+    -->
+    <style>
+      :root { color-scheme: light dark }
+      body {
+        margin: 0 auto; padding: 24px; max-width: 880px;
+        font: 14px/1.6 -apple-system, "Helvetica Neue", sans-serif;
+      }
+      h1 { font-size: 18px }
+      h2 { font-size: 14px; margin: 0 0 10px }
+      section { border: 1px solid #d4d4d4; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px }
+      button { font: inherit; padding: 4px 10px; border: 1px solid #a3a3a3; border-radius: 6px; background: #fafafa; cursor: pointer }
+      button:hover { background: #f0f0f0 }
+      code { font-size: 13px }
+      .wallets { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 8px }
+      .wallets li { display: flex; align-items: center; gap: 10px; border: 1px solid #e5e5e5; border-radius: 6px; padding: 8px 10px }
+      .wallets img { width: 24px; height: 24px; border-radius: 4px }
+      .wallets div { flex: 1 }
+      .rdns { font-family: ui-monospace, monospace; font-size: 12px; color: #737373 }
+      .calls { display: flex; flex-wrap: wrap; gap: 6px }
+      table { border-collapse: collapse; font-size: 13px; margin-bottom: 8px }
+      td { padding: 2px 14px 2px 0; vertical-align: top }
+      td:first-child { color: #737373; white-space: nowrap }
+      .hint { color: #737373; font-size: 13px }
+      .selected { font-weight: 600 }
+      #log { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow: auto }
+      #log div { padding: 2px 0; border-bottom: 1px solid #f0f0f0 }
+    </style>
+  </head>
+  <body>
+    <h1>EIP-6963 钱包选择测试页</h1>
+    <p class="hint">
+      钱包只负责广播自己；「列出所有钱包让用户选」这一步是 dApp 的活。这个页面就是那一步。
+    </p>
+
+    <section>
+      <h2>1. 传统全局 window.ethereum（只可能有一个赢家）</h2>
+      <table id="legacy"></table>
+      <p class="hint">
+        本钱包为兼容老 dApp 也声明了 <code>isMetaMask: true</code>，所以只有
+        <code>isMyWallet</code> 能把它和真正的 MetaMask 区分开。
+        <code>getter/setter</code> 形态说明有扩展把这个全局占住了（开发构建下就是本钱包）。
+      </p>
+      <button id="refresh-legacy" type="button">重新检查</button>
+    </section>
+
+    <section>
+      <h2>2. EIP-6963 发现（装了的钱包都会出现）</h2>
+      <ul class="wallets" id="wallets"></ul>
+      <p class="hint" id="empty">还没有钱包应答，点下面重新发现。</p>
+      <button id="discover" type="button">重新发现</button>
+      <button id="use-legacy" type="button">直接用 window.ethereum</button>
+    </section>
+
+    <section>
+      <h2>3. 调用</h2>
+      <p>当前 provider：<span id="selected" class="selected">未选择</span></p>
+      <div class="calls" id="calls"></div>
+    </section>
+
+    <section>
+      <h2>4. 日志</h2>
+      <div id="log"></div>
+    </section>
+
+    <script>
+      const found = new Map()
+      const wired = new WeakSet()
+      let selected = null
+
+      const logEl = document.getElementById("log")
+      const walletsEl = document.getElementById("wallets")
+      const emptyEl = document.getElementById("empty")
+      const selectedEl = document.getElementById("selected")
+
+      const format = (value) => {
+        if (value instanceof Error) return `${value.name}: ${value.message}`
+        // An EIP-1193 rejection is a plain object carrying a numeric `code`.
+        if (value && typeof value === "object" && "code" in value) {
+          return `code ${value.code}: ${value.message ?? ""}`
+        }
+        try {
+          return JSON.stringify(value)
+        } catch {
+          return String(value)
+        }
+      }
+
+      const log = (label, value) => {
+        const line = document.createElement("div")
+        line.textContent =
+          `[${new Date().toLocaleTimeString()}] ${label}` +
+          (value === undefined ? "" : ` → ${format(value)}`)
+        logEl.prepend(line)
+      }
+
+      const renderLegacy = () => {
+        const descriptor = Object.getOwnPropertyDescriptor(window, "ethereum")
+        const provider = window.ethereum
+        const shape = !descriptor
+          ? "未定义"
+          : descriptor.get
+            ? "getter/setter（有扩展把它占住了）"
+            : `value（可写：${descriptor.writable !== false}）`
+
+        const rows = [
+          ["window.ethereum", provider ? "存在" : "不存在"],
+          ["属性形态", shape],
+          ["configurable", descriptor ? String(descriptor.configurable) : "-"],
+          ["isMyWallet", String(Boolean(provider && provider.isMyWallet))],
+          ["isMetaMask", String(Boolean(provider && provider.isMetaMask))],
+          ["myWalletShadowed", window.myWalletShadowed ? "有（后写入的钱包停在这里）" : "无"],
+          ["window.myWallet", window.myWallet ? "存在（本钱包的桥接 API）" : "不存在"]
+        ]
+
+        const table = document.getElementById("legacy")
+        table.textContent = ""
+        for (const row of rows) {
+          const tr = document.createElement("tr")
+          for (const cell of row) {
+            const td = document.createElement("td")
+            td.textContent = cell
+            tr.append(td)
+          }
+          table.append(tr)
+        }
+      }
+      const attachEvents = (provider) => {
+        if (!provider || typeof provider.on !== "function" || wired.has(provider)) return
+        wired.add(provider)
+        for (const name of ["accountsChanged", "chainChanged", "connect", "disconnect"]) {
+          provider.on(name, (payload) => log(`事件 ${name}`, payload))
+        }
+      }
+
+      const select = (provider, label) => {
+        selected = provider
+        selectedEl.textContent = label
+        attachEvents(provider)
+        log("已选择 provider", label)
+      }
+
+      const renderWallets = () => {
+        walletsEl.textContent = ""
+        emptyEl.hidden = found.size > 0
+
+        for (const { info, provider } of found.values()) {
+          const li = document.createElement("li")
+
+          // Only a `data:` URI, which EIP-6963 requires anyway: a remote one would
+          // tell that host which wallets are installed on this machine.
+          if (typeof info.icon === "string" && info.icon.startsWith("data:")) {
+            const img = document.createElement("img")
+            img.src = info.icon
+            img.alt = ""
+            li.append(img)
+          }
+
+          const label = document.createElement("div")
+          // textContent, never innerHTML: the name comes from another extension.
+          label.textContent = info.name
+          const rdns = document.createElement("div")
+          rdns.className = "rdns"
+          rdns.textContent = info.rdns
+          label.append(rdns)
+
+          const button = document.createElement("button")
+          button.type = "button"
+          button.textContent = "选择"
+          button.addEventListener("click", () =>
+            select(provider, `${info.name}（${info.rdns}）`)
+          )
+
+          li.append(label, button)
+          walletsEl.append(li)
+        }
+      }
+      window.addEventListener("eip6963:announceProvider", (event) => {
+        const detail = event.detail
+        if (!detail || !detail.info || !detail.info.rdns) return
+        found.set(detail.info.rdns, detail)
+        log("收到 announceProvider", detail.info.rdns)
+        renderWallets()
+      })
+
+      // Every wallet also announces at document_start, long before this script
+      // runs, so asking for a re-announce is the only reliable way to see them.
+      const discover = () =>
+        window.dispatchEvent(new Event("eip6963:requestProvider"))
+
+      const request = async (payload) => {
+        if (!selected) throw new Error("先在上面选一个 provider")
+        log(`请求 ${payload.method}`, payload.params)
+        const result = await selected.request(payload)
+        log(`结果 ${payload.method}`, result)
+        return result
+      }
+
+      const account = async () => {
+        const [first] = await selected.request({ method: "eth_accounts" })
+        if (!first) throw new Error("还没连接，先点 eth_requestAccounts")
+        return first
+      }
+
+      const hex = (text) =>
+        "0x" +
+        [...new TextEncoder().encode(text)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("")
+
+      const typedData = (chainId) => ({
+        // Sent the way real dApps send it, `EIP712Domain` included: the router
+        // strips that key before ethers, which computes the domain itself, sees it.
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" }
+          ],
+          Message: [{ name: "content", type: "string" }]
+        },
+        primaryType: "Message",
+        domain: { name: "Test Dapp", version: "1", chainId },
+        message: { content: "hello from the test dapp" }
+      })
+      const CALLS = [
+        ["eth_requestAccounts", () => request({ method: "eth_requestAccounts" })],
+        ["eth_accounts", () => request({ method: "eth_accounts" })],
+        ["eth_chainId", () => request({ method: "eth_chainId" })],
+        ["wallet_isUnlocked", () => request({ method: "wallet_isUnlocked" })],
+        [
+          "personal_sign",
+          async () =>
+            request({
+              method: "personal_sign",
+              params: [hex("hello from the test dapp"), await account()]
+            })
+        ],
+        [
+          "eth_signTypedData_v4",
+          async () => {
+            const from = await account()
+            const chainId = Number(await selected.request({ method: "eth_chainId" }))
+            return request({
+              method: "eth_signTypedData_v4",
+              params: [from, JSON.stringify(typedData(chainId))]
+            })
+          }
+        ],
+        [
+          "eth_getBalance（只读透传）",
+          async () =>
+            request({ method: "eth_getBalance", params: [await account(), "latest"] })
+        ],
+        [
+          "wallet_switchEthereumChain → Sepolia",
+          () =>
+            request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0xaa36a7" }]
+            })
+        ],
+        [
+          "eth_sendTransaction（0 值转给自己，要花 gas）",
+          async () => {
+            const from = await account()
+            return request({
+              method: "eth_sendTransaction",
+              params: [{ from, to: from, value: "0x0" }]
+            })
+          }
+        ],
+        [
+          "wallet_watchAsset（预期被 4200 拒绝）",
+          () =>
+            request({
+              method: "wallet_watchAsset",
+              params: {
+                type: "ERC20",
+                options: {
+                  address: "0x5FF8cad920799D6BF410Ec3904CF3C8b92329630",
+                  symbol: "CTK",
+                  decimals: 18
+                }
+              }
+            })
+        ]
+      ]
+      const callsEl = document.getElementById("calls")
+      for (const [label, run] of CALLS) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.textContent = label
+        // A rejected request is a normal outcome here — 4001 and 4200 are both
+        // things this page exists to show — so nothing throws into the console.
+        button.addEventListener("click", () => {
+          run().catch((cause) => log("失败", cause))
+        })
+        callsEl.append(button)
+      }
+
+      document.getElementById("discover").addEventListener("click", discover)
+      document.getElementById("refresh-legacy").addEventListener("click", renderLegacy)
+      document.getElementById("use-legacy").addEventListener("click", () => {
+        if (!window.ethereum) {
+          log("window.ethereum 不存在")
+          return
+        }
+        const owner = window.ethereum.isMyWallet
+          ? "My Wallet"
+          : window.ethereum.isMetaMask
+            ? "MetaMask（或声明兼容它的钱包）"
+            : "未知钱包"
+        select(window.ethereum, `window.ethereum → ${owner}`)
+      })
+
+      renderLegacy()
+      discover()
+    </script>
+  </body>
+</html>

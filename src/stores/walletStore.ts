@@ -36,6 +36,7 @@ import {
   DEFAULT_NETWORKS,
   type Network,
   type StoredAccount,
+  type TrackedToken,
   type WalletAccount
 } from "../types/wallet.ts"
 
@@ -56,6 +57,14 @@ export interface WalletData {
   currentNetworkId: string
   /** Origins the user approved, e.g. `https://app.uniswap.org`. */
   connections: string[]
+  /**
+   * Tracked tokens, bucketed by `String(chainId)` rather than kept in one flat
+   * array. A flat array would force the per-network selector to `filter`, and a
+   * fresh array on every call is exactly what blanks the popup — see the note
+   * above `selectPublicAccounts`. Bucketing lets the selector return a stored
+   * reference and need no cache at all.
+   */
+  tokens: Record<string, TrackedToken[]>
 }
 
 export interface WalletStore extends WalletData {
@@ -99,6 +108,10 @@ export interface WalletStore extends WalletData {
   connect: (origin: string) => void
   disconnect: (origin: string) => void
 
+  /** Ignores a token already tracked on that chain, so the state stays put. */
+  addToken: (token: TrackedToken) => void
+  removeToken: (key: string) => void
+
   signMessageFor: (address: string, message: string | Uint8Array) => Promise<string>
   signTypedDataFor: (
     address: string,
@@ -119,7 +132,8 @@ const initialData: WalletData = {
   currentAddress: null,
   networks: DEFAULT_NETWORKS,
   currentNetworkId: DEFAULT_NETWORKS[0].id,
-  connections: []
+  connections: [],
+  tokens: {}
 }
 
 const chromeStorage: PersistStorage<WalletData> = {
@@ -184,6 +198,21 @@ export const selectCurrentNetwork = (state: WalletData): Network =>
 
 export const isOriginConnected = (state: WalletData, origin: string): boolean =>
   state.connections.includes(origin)
+
+/**
+ * Shared empty list. Returning a fresh `[]` from the fallback branch would break
+ * `Object.is` on every render for any chain with no tokens, which is the same
+ * render loop the `selectPublicAccounts` cache exists to avoid.
+ */
+const NO_TOKENS: TrackedToken[] = []
+
+/**
+ * Keyed on `chainId`, not `Network.id`: a chain a dapp adds through
+ * `wallet_addEthereumChain` gets a synthesized `chain-${chainId}` id, so the id
+ * is not stable enough to file tokens under.
+ */
+export const selectTokensForCurrentNetwork = (state: WalletData): TrackedToken[] =>
+  state.tokens[String(selectCurrentNetwork(state).chainId)] ?? NO_TOKENS
 
 export const useWalletStore = create<WalletStore>()(
   persist<WalletStore, [], [], WalletData>(
@@ -417,6 +446,38 @@ export const useWalletStore = create<WalletStore>()(
         }))
       },
 
+      // Public chain data, so unlike the signing actions these need no session
+      // key and stay synchronous.
+      addToken: (token) => {
+        set((state) => {
+          const bucket = state.tokens[String(token.chainId)] ?? NO_TOKENS
+          if (bucket.some(({ key }) => key === token.key)) return state
+
+          return {
+            tokens: { ...state.tokens, [String(token.chainId)]: [...bucket, token] }
+          }
+        })
+      },
+
+      // Keyed rather than scoped to the current network: the key already carries
+      // the chain, so removal cannot hit a token on a chain the user just left.
+      removeToken: (key) => {
+        set((state) => {
+          const entry = Object.entries(state.tokens).find(([, bucket]) =>
+            bucket.some((token) => token.key === key)
+          )
+          if (!entry) return state
+
+          const [chainId, bucket] = entry
+          return {
+            tokens: {
+              ...state.tokens,
+              [chainId]: bucket.filter((token) => token.key !== key)
+            }
+          }
+        })
+      },
+
       signMessageFor: async (address, message) => {
         const key = await requireSessionKey()
         const account = findStoredAccount(get().accounts, address)
@@ -467,14 +528,16 @@ export const useWalletStore = create<WalletStore>()(
         currentAddress,
         networks,
         currentNetworkId,
-        connections
+        connections,
+        tokens
       }) => ({
         vault,
         accounts,
         currentAddress,
         networks,
         currentNetworkId,
-        connections
+        connections,
+        tokens
       }),
       // The lock flag lives in session storage, not in the persisted blob, so
       // it has to be recomputed every time the store rehydrates.

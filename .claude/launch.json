@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "test-dapp",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["test-dapp/serve.mjs", "8080"],
+      "port": 8080
+    }
+  ]
+}

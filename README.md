@@ -47,6 +47,49 @@ The page API communicates through a validated content-script bridge. Normal page
 are ignored silently, so the bridge does not repeatedly print unrelated
 `window.postMessage` events.
 
+### Sharing `window.ethereum` with other wallets
+
+`window.ethereum` is one global that every installed wallet assigns at `document_start`, so
+whichever extension writes last wins — a legacy `window.ethereum.request(...)` reaches MetaMask,
+not this wallet, whenever MetaMask writes second. `src/background/injected-helper.ts` handles
+that in two ways:
+
+- The provider is always built, so it always dispatches `eip6963:announceProvider`. Any
+  EIP-6963-aware dapp (wagmi, RainbowKit, Web3Modal) lists **My Wallet** next to MetaMask and
+  lets the user pick, no race involved.
+- A development build additionally *holds* the legacy global: it installs `window.ethereum` as a
+  non-configurable getter, so a wallet that injects later cannot take it back. The displaced
+  provider stays reachable at `window.myWalletShadowed`. A production build never does this — it
+  claims the global only while it is free and leaves it writable, exactly as MetaMask does.
+
+So `await window.ethereum.request({ method: "eth_requestAccounts" })` opens this wallet when
+`build/chrome-mv3-dev` is loaded. If another wallet defined the global non-configurably before
+this script ran, it cannot be replaced at all; the console says so, and EIP-6963 (or disabling
+that wallet) is the way in.
+
+Note what the legacy global cannot do: pick. `window.ethereum.request(...)` reaches exactly one
+provider, whichever owns the global — no standard turns it into a chooser. Listing every
+installed wallet is the *page's* job, and it is what wagmi / RainbowKit / Web3Modal do with the
+EIP-6963 announcements.
+
+## Test dapp
+
+`test-dapp/index.html` is that page, in about a hundred lines of dependency-free JavaScript: it
+collects `eip6963:announceProvider`, lists every wallet that answered with its `rdns`, and lets
+one be selected and then driven through `eth_requestAccounts`, `personal_sign`,
+`eth_signTypedData_v4`, a read-only `eth_getBalance`, `wallet_switchEthereumChain`,
+`eth_sendTransaction` and a `wallet_watchAsset` that is expected to be refused with `4200`. It
+also reports who owns `window.ethereum` and whether anything is parked in
+`window.myWalletShadowed`.
+
+```bash
+node test-dapp/serve.mjs 8080
+```
+
+Then open `http://localhost:8080`. It has to be served, not opened as a `file://` URL: the
+content scripts match `https://*/*`, `http://localhost/*` and `http://127.0.0.1/*`, so a local
+file gets no injected provider. The server is loopback-only and serves that one directory.
+
 ## Wallet state
 
 `src/stores/walletStore.ts` is a zustand store persisted to `chrome.storage.local`, shared by
@@ -68,12 +111,21 @@ Crypto comes from the platform (`crypto.subtle`) and `ethers`; there is no `cryp
 `bip39` dependency and no Buffer polyfill. `DEFAULT_NETWORKS` uses keyless public RPC
 endpoints, so no API key is committed.
 
-Token registry/watch-asset support is not implemented. The dashboard reads the native balance
-over JSON-RPC (`src/hooks/use-native-balance.ts`), and dapps can use the injected
-`window.ethereum` provider for account access, signatures, typed-data signatures, network
-changes, read-only RPC, and approved `eth_sendTransaction` broadcasts.
-`importPrivateKey` needs an unlocked wallet, and `createWallet` / `importMnemonic` refuse to
-overwrite an existing vault.
+Tokens are tracked manually, by contract address, and filed per chain. `src/lib/token.ts` probes
+ERC-165 to tell ERC-20, ERC-721 and ERC-1155 apart and reads whatever metadata the standard
+actually exposes; balances come from `src/hooks/use-token-balances.ts`, one provider and one
+`eth_call` per token, and never reach disk. Sending is ERC-20 only — 721/1155 `safeTransferFrom`
+is not implemented. `wallet_watchAsset` still returns `4200`, so a dapp cannot add a token; and
+because an NFT's `tokenId`s cannot be enumerated without an indexing service, an ERC-721
+collection shows a holding count unless a `tokenId` is given. ERC-1155 has no on-chain name or
+symbol, so those are typed in by hand. A contract's self-reported `symbol()` is forgeable, so
+every screen shows the contract address beside it.
+
+The dashboard reads the native balance over JSON-RPC (`src/hooks/use-native-balance.ts`), and
+dapps can use the injected `window.ethereum` provider for account access, signatures,
+typed-data signatures, network changes, read-only RPC, and approved `eth_sendTransaction`
+broadcasts. `importPrivateKey` needs an unlocked wallet, and `createWallet` / `importMnemonic`
+refuse to overwrite an existing vault.
 
 ## Popup screens
 
@@ -81,10 +133,12 @@ overwrite an existing vault.
 no vault, the unlock prompt when the vault is locked, the one-time recovery-phrase backup, a
 pending dapp authorization, and otherwise `WalletDashboard`.
 
-`WalletDashboard` is the screen behind an unlocked wallet, split into five tabs: 总览 (account
+`WalletDashboard` is the screen behind an unlocked wallet, split into six tabs: 总览 (account
 card, native balance, block-explorer link), 转账 (native-coin transfer with recipient and amount
-validation), 账户 (switch, derive, import a private key, export secrets, reset the wallet), 网络
-(switch between `DEFAULT_NETWORKS`), and 连接 (approved origins, with a per-origin disconnect).
+validation), 代币 (tracked tokens with balances, an add-by-address form with standard detection,
+and the ERC-20 send screen), 账户 (switch, derive, import a private key, export secrets, reset the
+wallet), 网络 (switch between `DEFAULT_NETWORKS`), and 连接 (approved origins, with a per-origin
+disconnect).
 
 ## Tests
 

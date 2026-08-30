@@ -2,9 +2,9 @@
  * Native coin balance of the current account on the current network.
  *
  * Read-only by construction: it opens a one-shot JSON-RPC provider and never
- * touches the vault or the session key. Token balances are out of scope because
- * the store keeps no token list, which is why this is not the reference
- * implementation's `useWalletBalance`.
+ * touches the vault or the session key. Tracked tokens are read separately by
+ * `use-token-balances.ts`, which needs one provider for a whole batch of
+ * `eth_call`s rather than the single `getBalance` here.
  */
 import { formatEther, JsonRpcProvider } from "ethers"
 import { useCallback, useEffect, useState } from "react"

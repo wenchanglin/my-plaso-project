@@ -6,8 +6,14 @@ import { installChromeStub } from "./chrome-stub.mjs"
 
 // The store creates its persist middleware on import, so the stub must exist first.
 const chromeStub = installChromeStub()
-const { useWalletStore, WALLET_STORAGE_KEY, selectCurrentAccount, selectPublicAccounts } =
-  await import("../src/stores/walletStore.ts")
+const {
+  useWalletStore,
+  WALLET_STORAGE_KEY,
+  selectCurrentAccount,
+  selectPublicAccounts,
+  selectTokensForCurrentNetwork
+} = await import("../src/stores/walletStore.ts")
+const { tokenKey } = await import("../src/lib/token.ts")
 
 const PASSWORD = "correct horse battery staple"
 
@@ -20,6 +26,10 @@ const reset = () => {
     accounts: [],
     currentAddress: null,
     connections: [],
+    tokens: {},
+    // Tokens are filed per chain, so a test that switches networks would
+    // otherwise leak that choice into every test after it.
+    currentNetworkId: "sepolia",
     isUnlocked: false,
     pendingBackup: null
   })
@@ -320,3 +330,109 @@ test("refuses to export what the wallet does not hold", async () => {
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
   )
 })
+
+const USDC_ADDRESS = "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"
+
+const USDC = {
+  key: tokenKey(11155111, USDC_ADDRESS),
+  chainId: 11155111,
+  standard: "ERC20",
+  address: USDC_ADDRESS,
+  symbol: "USDC",
+  name: "USD Coin",
+  decimals: 6
+}
+
+test("tracking an already tracked token leaves the state untouched", () => {
+  reset()
+  useWalletStore.getState().addToken(USDC)
+  const state = useWalletStore.getState()
+
+  useWalletStore.getState().addToken({ ...USDC, symbol: "FAKE" })
+
+  // Same state object, so persist has nothing to write and React nothing to
+  // re-render. The reference implementation appended a duplicate row instead.
+  assert.equal(useWalletStore.getState(), state)
+  assert.deepEqual(
+    selectTokensForCurrentNetwork(state).map(({ symbol }) => symbol),
+    ["USDC"]
+  )
+})
+
+test("tokens belong to the chain they were added on", () => {
+  reset()
+  useWalletStore.getState().addToken(USDC)
+  assert.equal(selectTokensForCurrentNetwork(useWalletStore.getState()).length, 1)
+
+  // Keying on the address alone, as the reference implementation did, would show
+  // a Sepolia token on Polygon and let one overwrite the other.
+  useWalletStore.getState().switchNetwork("polygon")
+  assert.deepEqual(selectTokensForCurrentNetwork(useWalletStore.getState()), [])
+
+  useWalletStore.getState().switchNetwork("sepolia")
+  assert.equal(selectTokensForCurrentNetwork(useWalletStore.getState())[0].symbol, "USDC")
+})
+
+test("removing a token only drops that one", () => {
+  reset()
+  const other = { ...USDC, key: tokenKey(11155111, USDC_ADDRESS, "7"), tokenId: "7" }
+  useWalletStore.getState().addToken(USDC)
+  useWalletStore.getState().addToken(other)
+
+  useWalletStore.getState().removeToken(USDC.key)
+
+  assert.deepEqual(
+    selectTokensForCurrentNetwork(useWalletStore.getState()).map(({ key }) => key),
+    [other.key]
+  )
+})
+
+// Same trap as the account selectors: filtering one flat token array would hand
+// back a new array on every render and blank the popup.
+test("the token selector keeps the same reference, empty chains included", () => {
+  reset()
+  const empty = useWalletStore.getState()
+  assert.equal(selectTokensForCurrentNetwork(empty), selectTokensForCurrentNetwork(empty))
+
+  // Every chain with nothing tracked shares one empty list, so switching networks
+  // cannot produce a fresh array either.
+  useWalletStore.getState().switchNetwork("polygon")
+  assert.equal(
+    selectTokensForCurrentNetwork(useWalletStore.getState()),
+    selectTokensForCurrentNetwork(empty)
+  )
+
+  useWalletStore.getState().switchNetwork("sepolia")
+  useWalletStore.getState().addToken(USDC)
+  const filled = useWalletStore.getState()
+  assert.equal(selectTokensForCurrentNetwork(filled), selectTokensForCurrentNetwork(filled))
+  assert.notEqual(selectTokensForCurrentNetwork(filled), selectTokensForCurrentNetwork(empty))
+})
+
+test("persists the token registry, with nothing a JSON encoder would reject", async () => {
+  reset()
+  await useWalletStore.getState().createWallet(PASSWORD)
+  useWalletStore.getState().addToken(USDC)
+  await flushPersist()
+
+  const blob = chromeStub.local.get(WALLET_STORAGE_KEY)
+
+  // The store's storage adapter is a `PersistStorage`, not a JSON one, so there
+  // is no replacer hook where a `bigint` amount could be encoded. The stub keeps
+  // objects in a Map and would happily hold one; stringifying fails loudly here
+  // instead of in `chrome.storage.local` at runtime.
+  assert.doesNotThrow(() => JSON.stringify(blob))
+  assert.deepEqual(blob.state.tokens["11155111"], [USDC])
+})
+
+test("resetting the wallet stops tracking every token", async () => {
+  reset()
+  await useWalletStore.getState().createWallet(PASSWORD)
+  useWalletStore.getState().addToken(USDC)
+
+  await useWalletStore.getState().resetWallet()
+
+  assert.deepEqual(useWalletStore.getState().tokens, {})
+})
+
+

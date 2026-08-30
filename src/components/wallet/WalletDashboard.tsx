@@ -26,69 +26,33 @@ import { Card, CardContent } from "../ui/card.tsx"
 import { toast } from "../ui/sonner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs.tsx"
 import {
+  activeRowClass,
+  avatarClass,
+  badgeClass,
+  centerRowClass,
+  dangerButtonClass,
   ErrorText,
   Field,
+  hintClass,
+  iconButtonClass,
+  iconClass,
+  idleRowClass,
   inputClass,
   linkButtonClass,
   primaryButtonClass,
+  rowClass,
   secondaryButtonClass,
-  shortAddress
+  SectionHeader,
+  shortAddress,
+  smallButtonClass
 } from "./controls.tsx"
 import { ExportSecret } from "./ExportSecret.tsx"
 import { SendTransaction } from "./SendTransaction.tsx"
-
-const iconClass = "plasmo-h-4 plasmo-w-4"
-
-const centerRowClass = "plasmo-inline-flex plasmo-items-center plasmo-gap-1"
-
-const iconButtonClass =
-  "plasmo-rounded plasmo-p-1 plasmo-text-neutral-500 hover:plasmo-text-neutral-900 disabled:plasmo-opacity-40"
-
-/**
- * The 账户, 网络 and 连接 tabs are all lists of one thing, so they share a card
- * shape: an avatar or a status dot, two lines of text, and a trailing marker.
- * Direction and gap stay with each caller rather than being overridden here —
- * Tailwind resolves a conflict by stylesheet order, not by attribute order.
- */
-const rowClass =
-  "plasmo-flex plasmo-w-full plasmo-rounded-lg plasmo-border plasmo-p-3 plasmo-text-left plasmo-transition-colors"
-
-const idleRowClass =
-  "plasmo-border-neutral-200 hover:plasmo-border-neutral-300 hover:plasmo-bg-neutral-50"
-
-const activeRowClass =
-  "plasmo-border-neutral-900 plasmo-bg-neutral-50 plasmo-shadow-sm"
-
-const avatarClass =
-  "plasmo-flex plasmo-h-9 plasmo-w-9 plasmo-shrink-0 plasmo-items-center plasmo-justify-center plasmo-rounded-full plasmo-text-xs plasmo-font-semibold"
-
-const badgeClass =
-  "plasmo-shrink-0 plasmo-rounded-full plasmo-bg-neutral-900 plasmo-px-2 plasmo-py-0.5 plasmo-text-[10px] plasmo-font-medium plasmo-text-white"
-
-const smallButtonClass =
-  "plasmo-inline-flex plasmo-shrink-0 plasmo-items-center plasmo-gap-1 plasmo-rounded plasmo-border plasmo-border-neutral-300 plasmo-bg-white plasmo-px-2 plasmo-py-1 plasmo-text-xs plasmo-font-medium plasmo-text-neutral-900 hover:plasmo-border-neutral-900 disabled:plasmo-opacity-40"
-
-const hintClass = "plasmo-text-xs plasmo-leading-relaxed plasmo-text-neutral-500"
-
-/** Every tab opens the same way: a title on the left, an action or count right. */
-function SectionHeader({
-  title,
-  children
-}: {
-  title: string
-  children?: React.ReactNode
-}) {
-  return (
-    <div className="plasmo-flex plasmo-items-center plasmo-justify-between plasmo-gap-2">
-      <h2 className="plasmo-text-sm plasmo-font-semibold">{title}</h2>
-      {children}
-    </div>
-  )
-}
+import { TokenList } from "./TokenList.tsx"
 
 /**
  * The screen behind an unlocked wallet: an overview, the accounts, the networks,
- * and the origins this wallet is connected to.
+ * the tracked tokens, and the origins this wallet is connected to.
  *
  * Ported from the reference `WalletDashboard`. Its hand-rolled nav buttons are
  * the popup's Radix tabs here, with native-coin sending kept in its own form.
@@ -201,6 +165,9 @@ export function WalletDashboard() {
         <TabsList>
           <TabsTrigger value="overview">总览</TabsTrigger>
           <TabsTrigger value="send">转账</TabsTrigger>
+          {/* Two characters, like its neighbours: six triggers share 368px with
+              `flex-1`, and a third character wraps the row. */}
+          <TabsTrigger value="tokens">代币</TabsTrigger>
           <TabsTrigger value="accounts">账户</TabsTrigger>
           <TabsTrigger value="networks">网络</TabsTrigger>
           <TabsTrigger value="connections">连接</TabsTrigger>
@@ -334,6 +301,10 @@ export function WalletDashboard() {
 
         <TabsContent value="send">
           <SendTransaction />
+        </TabsContent>
+
+        <TabsContent value="tokens">
+          <TokenList />
         </TabsContent>
 
         <TabsContent value="accounts">
@@ -594,7 +565,7 @@ export function WalletDashboard() {
                     </span>
                     <button
                       type="button"
-                      className="plasmo-shrink-0 plasmo-rounded plasmo-border plasmo-border-neutral-300 plasmo-bg-white plasmo-px-2 plasmo-py-1 plasmo-text-xs plasmo-font-medium plasmo-text-neutral-600 hover:plasmo-border-red-500 hover:plasmo-text-red-600"
+                      className={`${smallButtonClass} ${dangerButtonClass}`}
                       onClick={() => disconnect(origin)}>
                       断开
                     </button>
