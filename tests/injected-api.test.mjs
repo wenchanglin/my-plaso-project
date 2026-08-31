@@ -1,7 +1,12 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { createInjectedWallet } from "../src/bridge/injected-api.ts"
+import {
+  createInjectedWallet,
+  INTERACTIVE_TIMEOUT_MS,
+  INTERACTIVE_TYPES
+} from "../src/bridge/injected-api.ts"
+import { DEFAULT_AUTHORIZATION_TIMEOUT_MS } from "../src/background/authorization.ts"
 
 const createWindowMock = () => {
   const listeners = new Set()
@@ -53,4 +58,33 @@ test("request rejects after timeout and removes its listener", async () => {
 
   await assert.rejects(wallet.getAccount(), /timed out/i)
   assert.equal(target.listeners.size, 0)
+})
+
+test("connect waits on its own ceiling, not the read one", async () => {
+  const target = createWindowMock()
+  const wallet = createInjectedWallet(target, {
+    timeoutMs: 5,
+    interactiveTimeoutMs: 60_000
+  })
+
+  // connect() blocks on a human clicking 确认, so the short ceiling must not
+  // apply — the approval it abandons would still be honoured by the background.
+  const pending = wallet.connect()
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  target.dispatchMessage({
+    from: "my-wallet-bridge",
+    requestId: target.messages[0].requestId,
+    success: true,
+    data: { account: "0xabc", approved: true }
+  })
+
+  assert.deepEqual(await pending, { account: "0xabc", approved: true })
+})
+
+test("the interactive ceiling outlasts the background's approval wait", () => {
+  assert.ok(INTERACTIVE_TIMEOUT_MS > DEFAULT_AUTHORIZATION_TIMEOUT_MS)
+  assert.deepEqual([...INTERACTIVE_TYPES].sort(), [
+    "WALLET_CONNECT",
+    "WALLET_SIGN_MESSAGE"
+  ])
 })

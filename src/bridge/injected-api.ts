@@ -19,9 +19,23 @@ interface MessageTarget {
 
 interface InjectedWalletOptions {
   timeoutMs?: number
+  interactiveTimeoutMs?: number
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
+
+/**
+ * `connect` and `signMessage` wait for the user, so they need the same ceiling
+ * as the EIP-1193 path in `services/dappProvider.ts`: above the background's
+ * DEFAULT_AUTHORIZATION_TIMEOUT_MS, or an approval that arrives after the page
+ * gave up still takes effect while the caller has been told it failed.
+ */
+export const INTERACTIVE_TIMEOUT_MS = 330_000
+
+export const INTERACTIVE_TYPES = new Set<WalletMessageType>([
+  "WALLET_CONNECT",
+  "WALLET_SIGN_MESSAGE"
+])
 
 /**
  * Creates the page-facing API without importing any Chrome APIs. The MAIN
@@ -33,6 +47,7 @@ export const createInjectedWallet = (
   options: InjectedWalletOptions = {}
 ): InjectedWalletApi => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const interactiveTimeoutMs = options.interactiveTimeoutMs ?? INTERACTIVE_TIMEOUT_MS
 
   const request = (type: WalletMessageType, data?: unknown): Promise<unknown> =>
     new Promise((resolve, reject) => {
@@ -86,7 +101,7 @@ export const createInjectedWallet = (
       timeoutId = setTimeout(() => {
         cleanup()
         reject(new Error("Wallet request timed out"))
-      }, timeoutMs)
+      }, INTERACTIVE_TYPES.has(type) ? interactiveTimeoutMs : timeoutMs)
     })
 
   return {

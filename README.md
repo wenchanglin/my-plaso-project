@@ -47,6 +47,20 @@ The page API communicates through a validated content-script bridge. Normal page
 are ignored silently, so the bridge does not repeatedly print unrelated
 `window.postMessage` events.
 
+### Approval timeouts
+
+A pending approval waits five minutes (`DEFAULT_AUTHORIZATION_TIMEOUT_MS` in
+`src/background/authorization.ts`), and the page-side ceiling for the methods that can prompt
+sits above it at 5.5 minutes (`INTERACTIVE_TIMEOUT_MS`). The order is the point. With the page
+giving up first — 30 seconds, as it was — a confirmation clicked at second 45 still reached
+`wallet.sendTransaction`: the swap went on-chain while the dapp had already reported
+`4900 Wallet request timed out`. Reads keep the 30-second ceiling, where a timeout can only mean
+a dead bridge.
+
+MV3 evicts an idle service worker after 30 seconds, and waiting for a human is pure idle time, so
+`waitForDecision` pings `chrome.runtime.getPlatformInfo` every 20 seconds to hold the worker open
+until the user decides.
+
 ### Sharing `window.ethereum` with other wallets
 
 `window.ethereum` is one global that every installed wallet assigns at `document_start`, so

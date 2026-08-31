@@ -37,11 +37,40 @@ interface MessageTarget {
 
 interface ProviderOptions {
   timeoutMs?: number
+  interactiveTimeoutMs?: number
   uuid?: string
   icon?: string
 }
 
-const DEFAULT_TIMEOUT_MS = 30_000
+/** Reads are answered in milliseconds, so this only ever catches a dead bridge. */
+export const DEFAULT_TIMEOUT_MS = 30_000
+
+/**
+ * Ceiling for the methods that can open the approval popup, where the wait is a
+ * human's, not a machine's.
+ *
+ * It has to stay *above* the background's DEFAULT_AUTHORIZATION_TIMEOUT_MS
+ * (300s). Below it — as 30s was — the page rejects while the background is
+ * still waiting, and the confirmation that lands afterwards broadcasts a
+ * transaction the dapp has already reported as failed. So the background always
+ * answers first and this timer is only a safety net for a broken bridge.
+ */
+export const INTERACTIVE_TIMEOUT_MS = 330_000
+
+/** Every method in `background/ethereum-router.ts` that can ask the user. */
+export const INTERACTIVE_METHODS = new Set([
+  "eth_requestAccounts",
+  "wallet_requestPermissions",
+  "personal_sign",
+  "eth_sign",
+  "eth_signTypedData",
+  "eth_signTypedData_v3",
+  "eth_signTypedData_v4",
+  "eth_sendTransaction",
+  "wallet_switchEthereumChain",
+  "wallet_addEthereumChain"
+])
+
 const PROVIDER_INFO = {
   name: "My Wallet",
   rdns: "com.mywallet",
@@ -82,6 +111,9 @@ export const createDappProvider = (
   options: ProviderOptions = {}
 ): EthereumProvider => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const interactiveTimeoutMs = options.interactiveTimeoutMs ?? INTERACTIVE_TIMEOUT_MS
+  const timeoutFor = (method: string) =>
+    INTERACTIVE_METHODS.has(method) ? interactiveTimeoutMs : timeoutMs
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   const onceWrappers = new Map<
     string,
@@ -116,7 +148,7 @@ export const createDappProvider = (
         const timer = setTimeout(() => {
           pending.delete(requestId)
           reject(providerError(4900, "Wallet request timed out"))
-        }, timeoutMs)
+        }, timeoutFor(method))
 
         pending.set(requestId, (result) => {
           clearTimeout(timer)

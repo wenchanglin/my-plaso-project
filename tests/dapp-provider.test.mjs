@@ -1,7 +1,13 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { createDappProvider } from "../src/services/dappProvider.ts"
+import {
+  createDappProvider,
+  DEFAULT_TIMEOUT_MS,
+  INTERACTIVE_METHODS,
+  INTERACTIVE_TIMEOUT_MS
+} from "../src/services/dappProvider.ts"
+import { DEFAULT_AUTHORIZATION_TIMEOUT_MS } from "../src/background/authorization.ts"
 
 const createTarget = () => {
   const listeners = new Map()
@@ -236,4 +242,71 @@ test("emits disconnect after accountsChanged clears the connected account", () =
   })
 
   assert.deepEqual(events, [{ code: 4900, message: "Disconnected" }])
+})
+
+test("a read times out on the short ceiling", async () => {
+  const target = createTarget()
+  const provider = createDappProvider(target, {
+    timeoutMs: 5,
+    interactiveTimeoutMs: 60_000
+  })
+
+  await assert.rejects(provider.request({ method: "eth_chainId" }), /timed out/i)
+})
+
+test("an approval-bearing method does not time out on the short ceiling", async () => {
+  const target = createTarget()
+  const provider = createDappProvider(target, {
+    timeoutMs: 5,
+    interactiveTimeoutMs: 60_000
+  })
+
+  // The user is still reading the popup: nothing answers for well past the
+  // read ceiling, and the request has to stay open anyway.
+  const pending = provider.request({
+    method: "eth_sendTransaction",
+    params: [{ from: "0xabc", to: "0xdef" }]
+  })
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  target.dispatch({
+    from: "my-wallet-bridge",
+    requestId: target.messages[0].requestId,
+    success: true,
+    data: "0xhash"
+  })
+
+  assert.equal(await pending, "0xhash")
+})
+
+/**
+ * The invariant behind the split. If the page gave up first, the approval the
+ * user clicked afterwards would still reach `wallet.sendTransaction` in the
+ * background — broadcasting a swap the dapp had already reported as failed.
+ */
+test("the interactive ceiling outlasts the background's approval wait", () => {
+  assert.ok(
+    INTERACTIVE_TIMEOUT_MS > DEFAULT_AUTHORIZATION_TIMEOUT_MS,
+    `${INTERACTIVE_TIMEOUT_MS} must exceed ${DEFAULT_AUTHORIZATION_TIMEOUT_MS}`
+  )
+  assert.ok(INTERACTIVE_TIMEOUT_MS > DEFAULT_TIMEOUT_MS)
+})
+
+test("every router method that can prompt is listed as interactive", () => {
+  // Guards against a new approval path inheriting the 30s read ceiling.
+  for (const method of [
+    "eth_requestAccounts",
+    "wallet_requestPermissions",
+    "personal_sign",
+    "eth_sign",
+    "eth_signTypedData",
+    "eth_signTypedData_v3",
+    "eth_signTypedData_v4",
+    "eth_sendTransaction",
+    "wallet_switchEthereumChain",
+    "wallet_addEthereumChain"
+  ]) {
+    assert.ok(INTERACTIVE_METHODS.has(method), method)
+  }
+  assert.ok(!INTERACTIVE_METHODS.has("eth_chainId"))
+  assert.ok(!INTERACTIVE_METHODS.has("eth_call"))
 })
