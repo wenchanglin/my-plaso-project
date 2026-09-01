@@ -2,13 +2,45 @@ import { createInjectedWallet } from "../bridge/injected-api.ts"
 import { createDappProvider, type EthereumProvider } from "../services/dappProvider.ts"
 
 /**
+ * What the page gets at `window.myWallet`: the four transport calls plus the
+ * EIP-1193 surface, so `window.myWallet.request({ method: "eth_requestAccounts" })`
+ * works without going through `window.ethereum` — which may well be MetaMask's —
+ * or through EIP-6963 discovery.
+ */
+export type PageWallet = ReturnType<typeof createInjectedWallet> &
+  Pick<EthereumProvider, "request" | "on" | "once" | "off" | "removeListener"> & {
+    /** The provider itself, for the mutable fields (`selectedAddress`, `chainId`). */
+    provider: EthereumProvider
+  }
+
+/**
+ * Delegates rather than reimplements: `myWallet.request` and
+ * `window.ethereum.request` have to be one code path, or the two drift. The
+ * provider's methods are closure-based arrows, so lifting them off the object
+ * keeps working. Only methods are copied — `selectedAddress` and `chainId` are
+ * mutated on the provider and would go stale as copies, hence `provider` above.
+ */
+const createPageWallet = (page: PageWindow, provider: EthereumProvider): PageWallet => {
+  const { request, on, once, off, removeListener } = provider
+  return {
+    ...createInjectedWallet(page),
+    provider,
+    request,
+    on,
+    once,
+    off,
+    removeListener
+  }
+}
+
+/**
  * What this script may touch on the page's `window`. Passed in rather than read
  * from the global so the injection rules are testable in Node.
  */
 export interface PageWindow {
   /** Whatever wallet owns the legacy global — possibly not this one. */
   ethereum?: unknown
-  myWallet?: ReturnType<typeof createInjectedWallet>
+  myWallet?: PageWallet
   /** Set once per page, so a re-run does not announce a second provider. */
   myWalletProvider?: EthereumProvider
   /** The provider that was displaced, kept for debugging rather than dropped. */
@@ -75,8 +107,6 @@ export const injectMyWallet = (
    */
   { takeOver = DEV_BUILD }: { takeOver?: boolean } = {}
 ): void => {
-  if (!page.myWallet) page.myWallet = createInjectedWallet(page)
-
   if (page.myWalletProvider) return
 
   // Built unconditionally, even when the global is someone else's: creating the
@@ -85,6 +115,7 @@ export const injectMyWallet = (
   // an injection race.
   const provider = createDappProvider(page)
   page.myWalletProvider = provider
+  page.myWallet = createPageWallet(page, provider)
 
   let owned = false
   if (takeOver) {

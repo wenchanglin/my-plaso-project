@@ -32,13 +32,22 @@ This should create a production bundle for your extension, ready to be zipped an
 ## Page bridge
 
 The extension injects `window.myWallet` on HTTPS pages. It exposes the transport methods
-`connect()`, `getAccount()`, `signMessage(message)`, and `disconnect()`.
+`connect()`, `getAccount()`, `signMessage(message)`, and `disconnect()`, plus the EIP-1193
+surface — `request(...)`, `on`, `once`, `off`, `removeListener` — and the provider itself at
+`window.myWallet.provider`.
 
 `connect()` opens the extension popup and resolves with the current account only after the
 user approves the request; an already-approved origin is served without a prompt.
 `getAccount()` requires an approved origin. `signMessage(message)` requires an approved
 origin *and* its own approval for every call, and resolves with `{ signature, address }`.
 `disconnect()` removes the origin from the approved list.
+
+`window.myWallet.request({ method: "eth_requestAccounts" })` reaches *this* wallet whatever
+owns `window.ethereum`, and without the page having to implement EIP-6963 discovery — which is
+the point of the name. It is the same function object as `window.ethereum.request` when this
+wallet owns the global, delegated rather than reimplemented, so the two cannot drift. The
+mutable fields (`selectedAddress`, `chainId`) live on `window.myWallet.provider`; they are not
+copied onto `myWallet`, where they would go stale.
 
 The origin is read from Chrome's `MessageSender`, never from the page, so a page cannot
 claim to be a different site.

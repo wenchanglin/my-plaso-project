@@ -11,8 +11,10 @@ import { injectMyWallet } from "../src/background/injected-helper.ts"
 const createPage = () => {
   const listeners = new Map()
   const events = []
+  const messages = []
   return {
     events,
+    messages,
     addEventListener(type, listener) {
       const set = listeners.get(type) ?? new Set()
       set.add(listener)
@@ -21,7 +23,15 @@ const createPage = () => {
     removeEventListener(type, listener) {
       listeners.get(type)?.delete(listener)
     },
-    postMessage() {},
+    postMessage(message) {
+      messages.push(message)
+    },
+    /** What the content-script bridge does when it answers. */
+    dispatchMessage(data) {
+      for (const listener of listeners.get("message") ?? []) {
+        listener({ source: this, data })
+      }
+    },
     dispatchEvent(event) {
       events.push(event)
       for (const listener of listeners.get(event.type) ?? []) listener(event)
@@ -120,4 +130,61 @@ test("running twice leaves one provider and one announcement", async () => {
 
   assert.equal(page.ethereum, provider)
   assert.equal(announcements(page).length, 1)
+})
+
+// `window.ethereum` may be MetaMask's and EIP-6963 needs the dapp to cooperate,
+// so `window.myWallet` is the one name that always reaches this wallet — which
+// is only useful if it speaks EIP-1193 too.
+test("window.myWallet.request answers eth_requestAccounts", async () => {
+  const page = createPage()
+  page.ethereum = otherWallet
+  injectMyWallet(page, { takeOver: false })
+
+  const pending = page.myWallet.request({ method: "eth_requestAccounts" })
+  const sent = page.messages.at(-1)
+  assert.equal(sent.type, "ETHEREUM_REQUEST")
+  assert.deepEqual(sent.data, { method: "eth_requestAccounts", params: [] })
+
+  page.dispatchMessage({
+    from: "my-wallet-bridge",
+    requestId: sent.requestId,
+    success: true,
+    data: ["0xabc"]
+  })
+
+  assert.deepEqual(await pending, ["0xabc"])
+  // The same request that window.ethereum would make, not a second code path.
+  assert.equal(page.myWallet.request, page.myWalletProvider.request)
+  assert.equal(page.myWallet.provider, page.myWalletProvider)
+})
+
+test("window.myWallet keeps the transport calls and gains the event methods", () => {
+  const page = createPage()
+  injectMyWallet(page, { takeOver: false })
+
+  for (const method of [
+    "connect",
+    "getAccount",
+    "signMessage",
+    "disconnect",
+    "request",
+    "on",
+    "once",
+    "off",
+    "removeListener"
+  ]) {
+    assert.equal(typeof page.myWallet[method], "function", method)
+  }
+
+  // Listening through myWallet must reach the provider's own emitter.
+  const seen = []
+  page.myWallet.on("chainChanged", (chainId) => seen.push(chainId))
+  page.dispatchMessage({
+    from: "my-wallet-background",
+    type: "ETHEREUM_EVENT",
+    event: "chainChanged",
+    data: "0xaa36a7"
+  })
+
+  assert.deepEqual(seen, ["0xaa36a7"])
 })
